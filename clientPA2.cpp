@@ -1,0 +1,87 @@
+#include <iostream>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/select.h>
+
+using namespace std;
+
+int main(int argc, char const *argv[]) {
+    // 1. Ensure enough arguments are passed to avoid SegFaulting on argv[1]
+    if (argc < 2) { 
+        cout << "Usage: ./client <IP>" << endl; 
+        return -1; 
+    }
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        return -1;
+    }
+
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(4552);
+
+    // 2. Validate IP address format
+    if (inet_pton(AF_INET, argv[1], &serv_addr.sin_addr) <= 0) {
+        cout << "Invalid address or address not supported" << endl;
+        return -1;
+    }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        cout << "Connection Failed. Is the server running?" << endl;
+        return -1;
+    }
+
+    cout << "Connected! Login to start trading." << endl;
+
+    fd_set readfds;
+    while (true) {
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(sock, &readfds);
+
+        // Wait for activity on either stdin or the socket
+        if (select(sock + 1, &readfds, NULL, NULL, NULL) < 0) {
+            perror("Select error");
+            break;
+        }
+
+        // --- Handle User Input ---
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            string cmd;
+            if (!getline(cin, cmd)) break; // Handle Ctrl+D
+
+            // 3. IMPORTANT: Add the newline character back! 
+            // The server's sscanf and parsing often rely on this.
+            string formatted_cmd = cmd + "\n";
+            send(sock, formatted_cmd.c_str(), formatted_cmd.length(), 0);
+
+            if (cmd == "QUIT") {
+                cout << "Exiting..." << endl;
+                break;
+            }
+        }
+
+        // --- Handle Server Response ---
+        if (FD_ISSET(sock, &readfds)) {
+            char buf[4096] = {0}; // Larger buffer for LIST/WHO outputs
+            int valread = read(sock, buf, sizeof(buf) - 1);
+
+            if (valread <= 0) {
+                // 4. Server closed connection (LOGOUT, SHUTDOWN, or a crash)
+                cout << "\nConnection closed by server." << endl;
+                break;
+            }
+
+            // Ensure null termination before printing
+            buf[valread] = '\0';
+            cout << buf << flush; // Use flush to see output immediately
+        }
+    }
+
+    close(sock);
+    return 0;
+}
