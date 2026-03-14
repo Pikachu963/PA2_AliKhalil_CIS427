@@ -1,0 +1,23 @@
+# Compilers
+CC = gcc
+CXX = g++
+
+# Flags
+CFLAGS = -O2
+CXXFLAGS = -Wall -std=c++17
+LIBS = -lpthread -ldl
+
+# Targets
+all: server client
+
+sqlite3.o: sqlite3.c
+	$(CC) $(CFLAGS) -c sqlite3.c -o sqlite3.o
+
+server: server.cpp sqlite3.o
+	$(CXX) $(CXXFLAGS) server.cpp sqlite3.o -o server $(LIBS)
+
+client: client.cpp
+	$(CXX) $(CXXFLAGS) client.cpp -o client
+
+clean:
+	rm -f server client sqlite3.o stocks.db
